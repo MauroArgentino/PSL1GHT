@@ -10,10 +10,10 @@
 #include <sys/file.h>
 
 int
-_DEFUN(__librt_access_r,(r,path,amode),
+_DEFUN(__librt_link_r,(r,old,new),
 	   struct _reent *r _AND
-	   const char *path _AND
-	   int amode)
+	   const char *old _AND
+	   const char *new)
 {
-	return lv2errno_r(r,sysLv2FsAccess(path,amode));
+	return lv2errno_r(r,sysLv2FsLink(old,new));
 }

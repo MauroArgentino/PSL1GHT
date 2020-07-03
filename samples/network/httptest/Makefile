@@ -1,68 +1,48 @@
 #---------------------------------------------------------------------------------
-# TARGET is the name of the output, if this ends with _mb generates a multiboot image
+# Clear the implicit built in rules
+#---------------------------------------------------------------------------------
+.SUFFIXES:
+#---------------------------------------------------------------------------------
+ifeq ($(strip $(PSL1GHT)),)
+$(error "Please set PSL1GHT in your environment. export PSL1GHT=<path>")
+endif
+
+include $(PSL1GHT)/ppu_rules
+
+#---------------------------------------------------------------------------------
+# TARGET is the name of the output
 # BUILD is the directory where object files & intermediate files will be placed
 # SOURCES is a list of directories containing source code
 # INCLUDES is a list of directories containing extra header files
 #---------------------------------------------------------------------------------
-TARGET		:=	cgcomp
+TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
 SOURCES		:=	source
-INCLUDE		:=	include
-LIBDIRS		:=
+DATA		:=	data
+INCLUDES	:=	include
 
+TITLE		:=	HTTP sample - PSL1GHT
+APPID		:=	DEBUGPR01
+CONTENTID	:=	UP0001-$(APPID)_00-0000000000000000
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 
-UNAME	:=	$(shell uname -s)
+CFLAGS		=	-O2 -Wall -mcpu=cell $(MACHDEP) $(INCLUDE)
+CXXFLAGS	=	$(CFLAGS)
 
-CFLAGS	:=	$(DEBUGFLAGS) -Wall -O2
-CFLAGS	+=	$(INCLUDES)
-CXXFLAGS	:=	$(CFLAGS) -fno-rtti -fno-exceptions
-CGTOOLKIT	:= echo Linux and Mac users should install Cg Toolkit package from NVIDIA web site.
+LDFLAGS		=	$(MACHDEP) -Wl,-Map,$(notdir $@).map
 
-LDFLAGS	=	$(DEBUGFLAGS)
+#---------------------------------------------------------------------------------
+# any extra libraries we wish to link with the project
+#---------------------------------------------------------------------------------
+LIBS	:=	-lrsx -lgcm_sys -lio -lsysutil -lrt -llv2 -lm -lnet -lsysmodule -lssl -lhttp -lhttputil
 
-ifeq ($(strip $(PS3DEV)),)
-  ifeq ($(strip $(DEVKITPS3)),)
-    export PS3DEV := /usr/local/ps3dev
-  else
-    export PS3DEV := $(DEVKITPS3)
-  endif
-endif
-
-ifneq (,$(findstring MINGW,$(UNAME)))
-	PLATFORM	:= win32
-	EXEEXT		:= .exe
-	CFLAGS		+= -mno-cygwin
-	LDFLAGS		+= -mno-cygwin -s
-	OS	:=	win32
-	CGTOOLKIT	:= chmod 755 ./cgdll-installer.sh; ./cgdll-installer.sh
-endif
-
-ifneq (,$(findstring CYGWIN,$(UNAME)))
-	LDFLAGS		+= -s
-	EXEEXT		:= .exe
-	CXXFLAGS	+= -DWIN32
-	OS	:=	win32
-	CGTOOLKIT	:= chmod 755 ./cgdll-installer.sh; ./cgdll-installer.sh
-endif
-
-ifneq (,$(findstring Darwin,$(UNAME)))
-	SDK		:= $(shell xcrun --show-sdk-path)
-	OSX_MIN		:= $(shell defaults read $(shell xcrun --show-sdk-platform-path)/Info MinimumSDKVersion 2> /dev/null || 10.4)
-	OSXCFLAGS	:= -mmacosx-version-min=$(OSX_MIN)
-	OSXCXXFLAGS	:=	$(OSXCFLAGS)
-	CXXFLAGS	+=	-fvisibility=hidden
-	LDFLAGS += -mmacosx-version-min=$(OSX_MIN) -Wl,-syslibroot,$(SDK)
-endif
-
-ifneq (,$(findstring Linux,$(UNAME)))
-	LDFLAGS += -ldl -lpthread
-	OS := Linux
-endif
-
-LIBS		:=
+#---------------------------------------------------------------------------------
+# list of directories containing libraries, this must be the top level containing
+# include and lib
+#---------------------------------------------------------------------------------
+LIBDIRS	:=
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
@@ -73,16 +53,12 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
 
-export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
+export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
+					$(foreach dir,$(DATA),$(CURDIR)/$(dir))
 
-export CC	:=	$(PREFIX)gcc
-export CXX	:=	$(PREFIX)g++
-export AR	:=	$(PREFIX)ar
-export OBJCOPY	:=	$(PREFIX)objcopy
-#---------------------------------------------------------------------------------
-# use CXX for linking C++ projects, CC for standard C
-#---------------------------------------------------------------------------------
-export LD	:=	$(CXX)
+export DEPSDIR	:=	$(CURDIR)/$(BUILD)
+
+export BUILDDIR	:=	$(CURDIR)/$(BUILD)
 
 #---------------------------------------------------------------------------------
 # automatically build a list of object files for our project
@@ -91,21 +67,36 @@ CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 sFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
-export OFILES	:= $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(sFILES:.s=.o) $(SFILES:.S=.o)
+#---------------------------------------------------------------------------------
+# use CXX for linking C++ projects, CC for standard C
+#---------------------------------------------------------------------------------
+ifeq ($(strip $(CPPFILES)),)
+	export LD	:=	$(CC)
+else
+	export LD	:=	$(CXX)
+endif
+
+export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
+					$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) \
+					$(sFILES:.s=.o) $(SFILES:.S=.o)
+
 #---------------------------------------------------------------------------------
 # build a list of include paths
 #---------------------------------------------------------------------------------
-export INCLUDES	:=	$(foreach dir,$(INCLUDE),-I$(CURDIR)/$(dir)) \
-			$(foreach dir,$(LIBDIRS),-I$(CURDIR)/$(dir)/include) \
-			-I$(CURDIR)/$(BUILD)
+export INCLUDE	:=	$(foreach dir,$(INCLUDES), -I$(CURDIR)/$(dir)) \
+					$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
+					$(LIBPSL1GHT_INC) \
+					-I$(CURDIR)/$(BUILD)
 
 #---------------------------------------------------------------------------------
 # build a list of library paths
 #---------------------------------------------------------------------------------
-export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(CURDIR)/$(dir)/lib)
+export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib) \
+					$(LIBPSL1GHT_LIB)
 
-export OUTPUT	:=	$(CURDIR)/$(TARGET)$(EXEEXT)
+export OUTPUT	:=	$(CURDIR)/$(TARGET)
 .PHONY: $(BUILD) clean
 
 #---------------------------------------------------------------------------------
@@ -116,13 +107,13 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(OUTPUT)
+	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).self
 
-install: $(BUILD)
-	@echo Installing $(TARGET)$(EXEEXT)
-	@[ -d $(PS3DEV)/bin ] || mkdir -p $(PS3DEV)/bin
-	@install -m 755  $(OUTPUT) $(PS3DEV)/bin
-	@$(CGTOOLKIT)
+#---------------------------------------------------------------------------------
+run:
+	ps3load $(OUTPUT).self
+
+
 #---------------------------------------------------------------------------------
 else
 
@@ -131,27 +122,16 @@ DEPENDS	:=	$(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(OUTPUT): $(DFILES) $(OFILES)
-	@echo linking ... $(notdir $@)
-	@$(LD) $^ $(LDFLAGS) $(LIBPATHS) $(LIBS) -o $@
+$(OUTPUT).self: $(OUTPUT).elf
+$(OUTPUT).elf:	$(OFILES)
 
 #---------------------------------------------------------------------------------
-# Compile Targets for C/C++
+# This rule links in binary data with the .bin extension
 #---------------------------------------------------------------------------------
-
+%.bin.o	:	%.bin
 #---------------------------------------------------------------------------------
-%.o : %.cpp
 	@echo $(notdir $<)
-	@$(CXX) -E -MMD $(CXXFLAGS) $< > /dev/null
-	@$(CXX) $(OSXCXXFLAGS) $(CXXFLAGS) -o $@ -c $<
-
-#---------------------------------------------------------------------------------
-%.o : %.c
-	@echo $(notdir $<)
-	@$(CC) -E -MMD $(CFLAGS) $< > /dev/null
-	@$(CC) $(OSXCFLAGS) $(CFLAGS) -o $@ -c $<
-
-
+	@$(bin2o)
 
 -include $(DEPENDS)
 
